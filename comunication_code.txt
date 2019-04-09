@@ -1,0 +1,144 @@
+#define F_CPU 16000000UL
+
+#include<stdio.h>
+#include<avr/io.h>
+#include<avr/interrupt.h>
+#define USART_BAUDRATE 9600 
+#define UBRR_VALUE (((F_CPU / (USART_BAUDRATE * 16UL)))-1)
+#define ADCINDEX 20
+//store ADC values
+uint8_t wave[ADCINDEX];
+volatile uint8_t ii=0;
+volatile uint8_t flag=0;
+volatile uint8_t * text;
+uint8_t volt, v1, v2,v3, temp;
+
+volatile uint16_t message;
+uint16_t OPEN_ADC(uint8_t ADCt);
+
+
+void USART0INIT(void)
+{
+	//set baud rate
+	UBRR0H= (uint8_t)(UBRR_VALUE>>8);
+	UBRR0L=(uint8_t)UBRR_VALUE;
+	//Set frame format to 8 data bits, no parity, 1 stop bit
+	UCSR0C |=(1 <<UCSZ01) | (1 << UCSZ00);
+	//enable transmission and reception
+	UCSR0B |=(1<< RXENO) | (1<< TXEN0);
+	UCSR0C=(1<< UCSZ01) | (1<< UCSZ00);
+}//end of USART0INIT
+
+void InitADC(void)
+{   //SELECT Vref=Avcc and set left adjust result
+	ADMUX |=(1<<REFSO)|(1<<ADLAR);
+	//set prescalar to 32, enable auto trigerring, enable ADC interrupt
+	//and enable ADC
+	ADCSRA|= (1 << ADPS2)|(1<< ADPS0)|(1<<ADATE)|(1<< ADIE)|(1<<ADEN);
+	//SET ADC trigger source -Timer0 compare match A
+	ADCSRB |=(1 << ADTS1) | (1<< ADTS0);
+
+}// end of InitADC
+
+
+
+
+
+
+uint8_t USART_RECEIVING(void)
+{
+	while(! (UCSR0A & (1<< RXCO)));
+	return UDR0;
+}//end of USART_RECEIVING
+
+void USART_TRANSMITTING(message)
+{
+	while (! (UCSR0A & (1 << UDRE0)));
+	UDR0 = message;
+}//end of USART_TRANSMITTING
+
+
+void USART_TEXT(text)
+{
+	while(text)
+	{
+		USART_TRANSMITTING(text);
+		text++;
+	}
+}// end of USART_TEXT
+
+void main (void)
+{
+	USART0INIT();
+	_delay_ms(100);  //greater than 40ms
+	InitADC();
+	_delay_ms(100); 
+	USART_TEXT("AT+ CIOBAUD=11500\R\N");  //BAUD 11500
+	_delay_ms(500); 
+	USART_TEXT("AT+CWMODE=1\r\n");
+	_delay_ms(500); 
+	USART_TEXT("AT+CWUAF=\"WIFI_NAME\", \"PASSWORD\"\r\n");
+	_delay_ms(1000);
+	int total_volt;
+	while(1)
+	{
+		volt= OPEN_ADC(ADC0D);
+		total_volt  =+ volt;
+		volt=((total_volt * volt)/10)+2;
+		if(volt >= 100)
+		{
+			
+			v1=volt/100;
+			v2=volt % 100;
+			v3= v2 % 10;
+			v2= v2 /10;
+		}
+			   else
+			   {
+				  v1=0;
+				  v2=volt/10;
+				  v3=volt % 10; 
+			   }
+			   
+			
+			
+		
+		
+	}//end of while
+	USART_TEXT("AT");
+	_delay_ms(500);
+	USART_TEXT("AT+CWMODE=1");
+	_delay_ms(500);
+	//sending
+	USART_TEXT("AT+CWLAP");
+	_delay_ms(500);
+	USART_TEXT("AT+CWJAP= WIFI_NAME , WIFI_PASSWORD");
+	_delay_ms(500);
+	USART_TEXT("AT+CIPSTART= TCP ,api.thingspeak.com, 80");
+	_delay_ms(500);
+	USART_TEXT("AT+CIPSEND=51\ ");
+	USART_TRANSMITTING(v1 + 50);
+	USART_TRANSMITTING(v2 + 50);
+	USART_TRANSMITTING(v3 + 50);
+	USART_TEXT("\r\n");
+	_delay_ms(500);
+	USART_TEXT("GET/ update?key= YOUR_API_KEY&field1=MY_DATA_like_100\r\n");
+	_delay_ms(500);
+	USART_TEXT("AT+CIPCLOSE");
+	
+	
+	
+	
+}//end of main
+
+
+uint16_t OPEN_ADC(uint8_t ADCt)
+{
+	ADMUX= (ADMUX & 0xF0) | (ADCt & 0xF0);
+	ADCSRA |=(1 << ADSC); //handshake
+	while(ADCSRA & (1<< ADSC));
+	return ADC;
+	
+}//end of Open
+
+
